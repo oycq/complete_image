@@ -68,6 +68,7 @@ def get_data(index):
     bar *= 0
     return image,image_raw, roi
 
+#fake_index  = 0
 
 class MyDataset(Dataset):
     def __init__(self, train_test):
@@ -80,9 +81,12 @@ class MyDataset(Dataset):
             return len(label_file_name_list)// 3 - 1
 
     def __getitem__(self,index):
+#        global fake_index 
+#        fake_index = (fake_index + 1) % 10
         if self.train_test == 'test':
             index += len(points_list) * 2 // 3
-        image, image_raw, roi =  get_data(index % 60)
+#        image, image_raw, roi =  get_data(fake_index)
+        image, image_raw, roi =  get_data(index)
         inputs = torch.tensor(image,dtype = torch.float32) / 255
         inputs = inputs.permute([2,0,1])
         ground_truth = torch.tensor(image_raw,dtype = torch.float32) / 255

@@ -11,7 +11,7 @@ import cv2
 import random
 import time
 
-BATCH_SIZE =20
+BATCH_SIZE = 30
 CUDA = 1
 WANDB = 0
 LOAD = 0
@@ -80,7 +80,7 @@ for epoch in range(20000000):
             optimizer_G.zero_grad() 
             loss1.backward()
             optimizer_G.step()
-            if loss1 < 0.04:
+            if loss1 < 0.20:
                 count += 1
                 if count > stable_count:
                     if_G = 0
@@ -96,7 +96,7 @@ for epoch in range(20000000):
             optimizer_D.zero_grad() 
             loss2.backward()
             optimizer_D.step()
-            if loss2 < 0.02:
+            if loss2 < 0.10:
                 count += 1
                 if count > stable_count:
                     count = 0
@@ -115,10 +115,16 @@ for epoch in range(20000000):
                        })
 
         if i % 10 == 0:
-            output_image = gen_image[0].permute([1,2,0]).detach().cpu().numpy()
-            ground_image = ground_truth[0].permute([1,2,0]).detach().cpu().numpy()
-            cv2.imshow('ground',cv2.resize(ground_image,(640,640)))
-            cv2.imshow('input',cv2.resize(output_image,(640,640)))
+            for i in range(1):
+                input_image = inputs[i].permute([1,2,0]).detach().cpu().numpy()
+                output_image = input_image.copy()
+                output_image[40:120,40:120] = gen_image[i].permute([1,2,0]).detach().cpu().numpy()
+                ground_image = input_image.copy()
+                ground_image[40:120,40:120]= ground_truth[i].permute([1,2,0]).detach().cpu().numpy()
+                cv2.imshow('ground',cv2.resize(ground_image,(640,640)))
+                cv2.imshow('out%s'%i,cv2.resize(output_image,(640,640)))
+
+
             if WANDB and i % 10 == 0:
                 output_image = (output_image * 255).astype('uint8')
                 ground_image= (ground_image* 255).astype('uint8')

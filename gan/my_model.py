@@ -13,7 +13,6 @@ cfg_judge_i = [32, 32, 'M', 64, 64,'M',128,128,'M',256,256, 'M', 512,512]
 cfg_judge_o = [64, 64,'M',128,128,'M',256,256, 'M', 512,512]
 
 
-
 class Model(nn.Module):
     def __init__(self):
         super(Model, self).__init__()
@@ -21,7 +20,8 @@ class Model(nn.Module):
         self.judge_cnn_i = self._make_layers(cfg_judge_i, batch_norm=True, in_channels=3)
         self.judge_cnn_o = self._make_layers(cfg_judge_o, batch_norm=True, in_channels=3)
         self.judge_score = nn.Sequential(
-            nn.Linear(10*10*512*2, 256),
+            #nn.Linear(10*10*512*2, 256),
+            nn.Linear(10*10*512, 256),
             #nn.BatchNorm1d(256),
             nn.ReLU(inplace = True),
             nn.Linear(256, 256),
@@ -57,13 +57,15 @@ class Model(nn.Module):
         x = x.flatten(1) 
         y = self.judge_cnn_o(gen_image)
         y = y.flatten(1) 
-        z = torch.cat([x,y],1)
+        #z = torch.cat([x,y],1)
+        z = (x - y) ** 2
         conf_for_gen = self.judge_score(z)
         x = self.judge_cnn_i(inputs)
         x = x.flatten(1) 
         y = self.judge_cnn_o(groud_truth)
         y = y.flatten(1) 
-        z = torch.cat([x,y],1)
+        #z = torch.cat([x,y],1)
+        z = (x - y) ** 2
         conf_for_real = self.judge_score(z)
         return gen_image, conf_for_gen, conf_for_real
 
