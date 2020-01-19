@@ -11,7 +11,7 @@ import cv2
 import random
 import time
 
-BATCH_SIZE =20
+BATCH_SIZE = 2 
 CUDA = 1
 WANDB = 0
 LOAD = 0
@@ -22,15 +22,15 @@ LOAD = 0
 #cv2.moveWindow("b", 3840,0);
 #cv2.setWindowProperty("b", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN);
 
-
+if WANDB:
+    wandb.init()
+    history_directory = '../store/history/%s'%datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    os.mkdir(history_directory)
+    #wandb.watch(model)
 
 model = my_model.Model()
-d_params = list(model.judge_cnn_i.parameters()) \
-            +list(model.judge_cnn_o.parameters())\
-            +list(model.judge_score.parameters())
-g_params = model.gen_cnn.parameters()
-optimizer_D = optim.Adadelta(model.parameters())
-optimizer_G = optim.Adadelta(model.parameters())
+optimizer_D = optim.Adam(model.parameters())
+optimizer_G = optim.Adam(model.parameters())
 if CUDA:
     model = model.cuda()
 
@@ -39,13 +39,6 @@ if LOAD:
     optimizer.load_state_dict(torch.load('../store/history/2020-01-08-00-39-51/25-5000.adam'))
 model.train()
 
-
-if WANDB:
-    wandb.init()
-    history_directory = '../store/history/%s'%datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    os.mkdir(history_directory)
-    wandb.watch(model,log='all')
-    print(model)
 
 train_set = my_dataset.MyDataset('train')
 test_set = my_dataset.MyDataset('test')
@@ -62,8 +55,7 @@ if CUDA:
 first_time = 1
 if_G = 1
 count = 0
-stable_count = 0
-
+stable_count = 5
 for epoch in range(20000000):
     print('----- epoch %d -----'%epoch) 
     time0 = time.time()
@@ -71,16 +63,20 @@ for epoch in range(20000000):
         if CUDA:
             inputs = inputs.cuda()
             ground_truth = ground_truth.cuda()
+
+
+        gen_image = model.gen(inputs)
+        conf_for_gen = model.judge(inputs, gen_image)
+        conf_for_real = model.judge(inputs, ground_truth)
         
         if if_G == 1: 
-            gen_image, conf_for_gen, conf_for_real = model(inputs,ground_truth,'gen')
-            loss1_1 = loss_f2(gd+1, conf_for_gen) 
-            loss1_2 = loss_f2(gen_image, ground_truth)
-            loss1 =loss1_1
+            loss1 = loss_f2(gd+1, conf_for_gen) 
+            #loss2 = loss_f2(gen_image, ground_truth)
+            loss = loss1
             optimizer_G.zero_grad() 
-            loss1.backward()
+            loss.backward()
             optimizer_G.step()
-            if loss1 < 0.04:
+            if loss1 < 0.36:
                 count += 1
                 if count > stable_count:
                     if_G = 0
@@ -91,12 +87,12 @@ for epoch in range(20000000):
 
         if if_G == 0 or first_time == 1:
             first_time = 0
-            gen_image, conf_for_gen, conf_for_real = model(inputs,ground_truth,'judge')
-            loss2 = loss_f2(conf_for_gen, gd) / 2 + loss_f2(conf_for_real,gd+1) / 2
+            conf_for_fake,conf_for_real,fake_image = model.judge(ground_truth,inputs)
+            loss2 = loss_f2(conf_for_fake,gd) / 2 + loss_f2(conf_for_real,gd+1) / 2
             optimizer_D.zero_grad() 
             loss2.backward()
             optimizer_D.step()
-            if loss2 < 0.02:
+            if loss2 < 0.16:
                 count += 1
                 if count > stable_count:
                     count = 0
@@ -108,6 +104,7 @@ for epoch in range(20000000):
 
         if WANDB:
             wandb.log({'conf_for_gen':torch.mean(conf_for_gen).item(),
+                        'conf_for_fake':torch.mean(conf_for_fake).item(),
                         'conf_for_real':torch.mean(conf_for_real).item(),
                         'loss1':loss1.item(),
                         'loss2':loss2.item(),
@@ -115,7 +112,10 @@ for epoch in range(20000000):
                        })
 
         if i % 10 == 0:
-            output_image = gen_image[0].permute([1,2,0]).detach().cpu().numpy()
+            if if_G == 1:
+                output_image = gen_image[0].permute([1,2,0]).detach().cpu().numpy()
+            else:
+                output_image = fake_image[0].permute([1,2,0]).detach().cpu().numpy()
             ground_image = ground_truth[0].permute([1,2,0]).detach().cpu().numpy()
             cv2.imshow('ground',cv2.resize(ground_image,(640,640)))
             cv2.imshow('input',cv2.resize(output_image,(640,640)))
@@ -129,10 +129,11 @@ for epoch in range(20000000):
         if key == ord('q'):
             os._exit(0)
 
-        if i % 1 == 0:
-            print('%5d G:%2d gen: %10.7f real_conf:%10.7f loss1:%10.5f loss2:%10.5f'%(i,if_G,\
-                torch.mean(conf_for_gen).item(),\
-                torch.mean(conf_for_real),loss1.item(),loss2.item()))
+        if i % 20 == 0:
+            print('%5d  G:%2d gen: %10.5f real_conf:%10.5f fake_conf:%10.5f'%(i,if_G,\
+                    torch.mean(conf_for_gen).item(),\
+                torch.mean(conf_for_real).item(),torch.mean(conf_for_fake).item()
+                    ))
 
     if epoch % 2 == 0 and WANDB:
         torch.save(optimizer_G.state_dict(),'%s/%d-%d.gadam'%(history_directory,epoch,i))
